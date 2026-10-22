@@ -195,8 +195,6 @@ header.bar .brand,header.bar .code{transition:opacity .15s}
   main.wrap{padding-block:14px 48px;gap:12px}
   .bar .wrap{display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"brand acciones" "tabs tabs";gap:8px 10px;padding-block:8px}
   .brand{grid-area:brand;flex:none}
-  .brand h1{font-size:1.05rem;text-wrap:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .brand .code{font-size:.66rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .brand-row img{height:26px}
   .acciones{grid-area:acciones;margin-left:0;gap:6px}
   .iconbtn,.btn.salir{height:34px}.iconbtn{width:34px}
@@ -240,4 +238,20 @@ header.bar .brand,header.bar .code{transition:opacity .15s}
 @media (max-width:380px){
   .seg button{width:38px}
   .item .nm{font-size:.9rem}
+}
+
+/* Planilla del mes: desplazamiento lateral visible */
+.planilla{display:flex;flex-direction:column;gap:8px;min-width:0}
+.planilla-nav{display:flex;align-items:center;gap:6px}
+.planilla-nav .iconbtn{width:34px;height:34px;font-size:1.3rem;line-height:1}
+.planilla-nav .iconbtn:disabled{opacity:.35;cursor:default}
+.planilla-scroll{overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;scrollbar-width:auto;scrollbar-color:var(--muted) var(--surface-2)}
+.planilla-scroll::-webkit-scrollbar{height:10px;width:10px}
+.planilla-scroll::-webkit-scrollbar-track{background:var(--surface-2)}
+.planilla-scroll::-webkit-scrollbar-thumb{background:var(--muted);border-radius:999px;border:2px solid var(--surface-2)}
+table.pl thead th{z-index:2}
+table.pl thead th.it{z-index:3}
+@media (max-width:720px){
+  table.pl th.it,table.pl td.it{max-width:140px;min-width:120px;white-space:normal;line-height:1.2;font-size:.74rem;padding:4px 6px}
+  .planilla-nav .hint{font-size:.8rem}
 }
