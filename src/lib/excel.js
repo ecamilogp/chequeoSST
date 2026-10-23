@@ -8,6 +8,14 @@ const COLOR = {
   tinta: 'FF16202B', gris: 'FF5B6977', linea: 'FFD5DBE2', seccion: 'FFE9EDF1', encabezado: 'FF16202B',
   C: ['FFDCF1E3', 'FF1F8A4C'], N: ['FFF9DEDB', 'FFC8362B'], NA: ['FFE4E8EC', 'FF6B7785']
 };
+const DIA_LARGO = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+const ACTIVIDAD = { B: 'Energía', C: 'Agua', D: 'Moto' };
+// Actividades que el empleado reportó ese día: las secciones que no quedaron todas en "No aplica".
+const actividadesDe = insp => Object.entries(ACTIVIDAD)
+  .filter(([k]) => SECCIONES.find(s => s.k === k)?.items.some(([id]) => insp.respuestas?.[id] && insp.respuestas[id] !== 'NA'))
+  .map(([, n]) => n);
+// Área del empleado ese día: Energía y/o Agua, según las secciones que llenó.
+const areaDe = insp => actividadesDe(insp).filter(n => n !== 'Moto').join(' y ') || 'General';
 const ESTADO = { pendiente: 'Por validar', corregida: 'Corregida · por validar', validada: 'Validada', devuelta: 'Devuelta' };
 const borde = { style: 'thin', color: { argb: COLOR.linea } };
 const bordes = { top: borde, left: borde, bottom: borde, right: borde };
@@ -44,6 +52,13 @@ function medidasPng(b64) {
   } catch { return [0, 0]; }
 }
 
+// Centra todo el texto de una hoja (títulos, datos del empleado, elementos y novedades).
+function centrarTodo(ws) {
+  ws.eachRow({ includeEmpty: false }, row => row.eachCell({ includeEmpty: true }, c => {
+    c.alignment = { ...(c.alignment || {}), horizontal: 'center', vertical: 'middle', wrapText: true };
+  }));
+}
+
 export async function generarExcel({ mes, miembros: tecnicos, inspecciones, firmas }) {
   const { default: ExcelJS } = await import('exceljs');
   const wb = new ExcelJS.Workbook();
@@ -57,49 +72,74 @@ export async function generarExcel({ mes, miembros: tecnicos, inspecciones, firm
   // ---------- Resumen ----------
   const rs = wb.addWorksheet('Resumen', { views: [{ state: 'frozen', ySplit: 5 }] });
   const cols = [
-    ['Fecha', 11], ['Día', 6], ['Empleado', 28], ['Correo', 26], ['Cargo', 16], ['Área', 16], ['Hora de envío', 11],
-    ['No cumplen', 10], ['Elementos que no cumplen', 48], ['Observaciones', 36], ['Estado', 18],
-    ['Revisó', 24], ['Fecha de validación', 17], ['Nota de revisión', 36], ['Ubicación', 22],
-    ['Firma del empleado', 23], ['Firma de quien revisó', 23]
+    'Fecha', 'Día', 'Empleado', 'Correo', 'Cargo', 'Área', 'Hora de envío', 'No cumplen', 'Elementos que no cumplen',
+    'Observaciones', 'Estado', 'Revisó', 'Fecha de validación', 'Nota de revisión', 'Firma del empleado', 'Firma de quien revisó'
   ];
   const COL_FIRMA = cols.length - 1; // índice (base 1) de "Firma del empleado"
-  // Pone una firma (PNG en base64) dentro de una celda.
-  // La imagen se ajusta al recuadro ancho × alto sin deformarse.
+  const ANCHO_MAX = { 9: 46, 10: 40, 14: 40 }; // columnas de texto largo: a partir de ahí el texto baja de línea
+  // Pone una firma (PNG en base64) centrada en su celda, sin deformarla.
   const ponerFirma = (hoja, b64, col, fila, ancho, alto) => {
     if (!b64) return;
     const [w, h] = medidasPng(b64);
     const k = w && h ? Math.min(ancho / w, alto / h) : 1;
+    const iw = w && h ? w * k : ancho, ih = w && h ? h * k : alto;
+    const cw = (hoja.getColumn(col).width || 9) * 7 + 5, ch = (hoja.getRow(fila).height || 15) * 4 / 3;
     const id = wb.addImage({ base64: b64, extension: 'png' });
-    hoja.addImage(id, { tl: { col: col - 1 + 0.06, row: fila - 1 + 0.08 }, ext: { width: w && h ? w * k : ancho, height: w && h ? h * k : alto }, editAs: 'oneCell' });
+    hoja.addImage(id, {
+      tl: { col: col - 1 + Math.max(0, (cw - iw) / 2 / cw), row: fila - 1 + Math.max(0, (ch - ih) / 2 / ch) },
+      ext: { width: iw, height: ih }, editAs: 'oneCell'
+    });
   };
-  cols.forEach(([, w], i) => { rs.getColumn(i + 1).width = w; });
   encabezadoFormato(rs, cols.length, `Resumen de ${fmtMes(mes)} · ${inspecciones.length} inspecciones`);
-  const hr = rs.getRow(5);
-  cols.forEach(([h], i) => {
-    const c = hr.getCell(i + 1);
-    c.value = h; c.font = { bold: true, color: { argb: 'FFFFFFFF' } }; c.fill = relleno(COLOR.encabezado);
-    c.alignment = { vertical: 'middle', wrapText: true }; c.border = bordes;
-  });
-  hr.height = 30;
+
   const ordenadas = [...inspecciones].sort((a, b) => a.fecha.localeCompare(b.fecha) || a.nombre.localeCompare(b.nombre));
-  for (const i of ordenadas) {
+  const datos = ordenadas.map(i => {
     const [yy, mm, dd] = i.fecha.split('-').map(Number);
     const tec = porTec.get(i.miembro_id)?.t;
-    const nc = ALL.filter(e => i.respuestas[e.id] === 'N').map(e => `${e.n}: ${i.obs_items?.[e.id] || ''}`).join('\n');
-    const row = rs.addRow([
-      new Date(Date.UTC(yy, mm - 1, dd)), DIAS[new Date(yy, mm - 1, dd).getDay()], i.nombre, tec?.email || '', i.cargo, i.area,
-      fmtHora(i.enviada_at), i.total_no_cumple, nc, i.observaciones, ESTADO[i.estado] || i.estado,
+    return { i, valores: [
+      new Date(Date.UTC(yy, mm - 1, dd)), DIA_LARGO[new Date(yy, mm - 1, dd).getDay()], i.nombre, tec?.email || '', i.cargo || '',
+      areaDe(i), fmtHora(i.enviada_at), i.total_no_cumple,
+      ALL.filter(e => i.respuestas[e.id] === 'N').map(e => `${e.n}: ${i.obs_items?.[e.id] || ''}`).join('\n'),
+      i.observaciones || '', ESTADO[i.estado] || i.estado,
       i.revisor_nombre ? `${i.revisor_nombre}${i.revisor_cargo ? ' · ' + i.revisor_cargo : ''}` : '',
-      fmtFechaHora(i.revisada_at), i.nota_revisor || '', i.ubicacion || '', '', ''
-    ]);
-    const lineas = Math.max(1, nc.split('\n').length, String(i.observaciones || '').split('\n').length);
-    row.height = Math.max(46, lineas * 15);
-    ponerFirma(rs, firmas[i.firma_path], COL_FIRMA, row.number, 150, 56);
-    if (i.estado === 'validada' || i.estado === 'devuelta') ponerFirma(rs, firmas[i.firma_revisor_path], COL_FIRMA + 1, row.number, 150, 56);
+      fmtFechaHora(i.revisada_at), i.nota_revisor || '', '', ''
+    ] };
+  });
+
+  // Ancho de cada columna según su texto más largo.
+  const texto = (v, c) => c === 1 ? '00/00/0000' : String(v ?? '');
+  cols.forEach((h, k) => {
+    const c = k + 1;
+    let largo = Math.max(...h.split(' ').map(p => p.length)) + 2;
+    for (const { valores } of datos) for (const l of texto(valores[k], c).split('\n')) largo = Math.max(largo, l.length + 3);
+    rs.getColumn(c).width = c >= COL_FIRMA ? 24 : Math.min(ANCHO_MAX[c] || 34, Math.max(9, largo));
+  });
+
+  const hr = rs.getRow(5);
+  cols.forEach((h, k) => {
+    const c = hr.getCell(k + 1);
+    c.value = h; c.font = { bold: true, color: { argb: 'FFFFFFFF' } }; c.fill = relleno(COLOR.encabezado);
+    c.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }; c.border = bordes;
+  });
+  hr.height = 32;
+
+  for (const { i, valores } of datos) {
+    const row = rs.addRow(valores);
+    // Alto según cuántas líneas ocupa el texto en su columna.
+    let lineas = 1;
+    valores.forEach((v, k) => {
+      const ancho = rs.getColumn(k + 1).width - 2;
+      const n = texto(v, k + 1).split('\n').reduce((t, l) => t + Math.max(1, Math.ceil(l.length / ancho)), 0);
+      lineas = Math.max(lineas, n);
+    });
+    row.height = Math.max(48, lineas * 15 + 10);
     row.getCell(1).numFmt = 'dd/mm/yyyy';
-    row.eachCell({ includeEmpty: true }, c => { c.border = bordes; c.alignment = { vertical: 'top', wrapText: true }; });
+    row.eachCell({ includeEmpty: true }, c => { c.border = bordes; c.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }; });
     if (i.total_no_cumple > 0) row.getCell(8).font = { bold: true, color: { argb: COLOR.N[1] } };
+    ponerFirma(rs, firmas[i.firma_path], COL_FIRMA, row.number, 150, 52);
+    if (i.estado === 'validada' || i.estado === 'devuelta') ponerFirma(rs, firmas[i.firma_revisor_path], COL_FIRMA + 1, row.number, 150, 52);
   }
+  centrarTodo(rs);
   rs.autoFilter = { from: { row: 5, column: 1 }, to: { row: 5, column: cols.length } };
   rs.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9 };
 
@@ -117,7 +157,8 @@ export async function generarExcel({ mes, miembros: tecnicos, inspecciones, firm
 
     ws.mergeCells(4, 1, 4, ultima);
     const ultimaFila = filas[filas.length - 1];
-    ws.getCell(4, 1).value = `Empleado: ${t.nombre}   ·   Correo: ${t.email}   ·   Cargo: ${ultimaFila.cargo || t.cargo || ''}   ·   Área: ${ultimaFila.area || t.area || ''}`;
+    const areas = ['Energía', 'Agua'].filter(n => filas.some(f => actividadesDe(f).includes(n)));
+    ws.getCell(4, 1).value = `Empleado: ${t.nombre}   ·   Correo: ${t.email}   ·   Cargo: ${ultimaFila.cargo || t.cargo || ''}   ·   Área: ${areas.join(' y ') || 'General'}`;
     ws.getCell(4, 1).font = { bold: true };
     ws.mergeCells(5, 1, 5, ultima);
     ws.getCell(5, 1).value = `Marque: ${SYM.C} Cumple   ${SYM.N} No cumple   ${SYM.NA} No aplica.   ${APP.formato.nota}`;
@@ -199,6 +240,8 @@ export async function generarExcel({ mes, miembros: tecnicos, inspecciones, firm
     ws.addRow([]);
     const tn = ws.addRow([lista.length ? 'NOVEDADES Y OBSERVACIONES DEL MES' : 'Sin novedades en el mes.']);
     tn.getCell(1).font = { bold: true };
+    ws.mergeCells(tn.number, 1, tn.number, ultima);
+    const filaNov = tn.number;
     for (const [fecha, elem, det, est] of lista) {
       const r = ws.addRow([`${fecha.slice(8)}/${fecha.slice(5, 7)} · ${elem}`]);
       ws.mergeCells(r.number, COL0, r.number, ultima);
@@ -207,6 +250,11 @@ export async function generarExcel({ mes, miembros: tecnicos, inspecciones, firm
       r.getCell(1).font = { size: 9 }; r.getCell(COL0).font = { size: 9 };
     }
 
+    centrarTodo(ws);
+    // Las novedades del mes quedan alineadas a la izquierda.
+    for (let n = filaNov; n <= ws.rowCount; n++) ws.getRow(n).eachCell({ includeEmpty: true }, c => {
+      c.alignment = { ...c.alignment, horizontal: 'left', vertical: 'top' };
+    });
     ws.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9, margins: { left: 0.3, right: 0.3, top: 0.4, bottom: 0.4, header: 0.2, footer: 0.2 } };
   }
 
