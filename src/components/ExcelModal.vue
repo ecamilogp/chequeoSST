@@ -26,8 +26,10 @@ async function descargar() {
     const { data, error } = await q;
     if (error) throw error;
     if (!data.length) { estado.value = 'No hay inspecciones en ese mes.'; trabajando.value = false; return; }
-    estado.value = `Descargando ${data.length} firmas…`;
-    const firmas = await descargarFirmas(data.map(i => i.firma_path));
+    const rutas = [...data.map(i => i.firma_path), ...data.map(i => i.firma_revisor_path)].filter(Boolean);
+    estado.value = `Descargando ${rutas.length} firmas…`;
+    const firmas = await descargarFirmas(rutas);
+    const faltan = rutas.filter(r => !firmas[r]).length;
     estado.value = 'Armando el Excel…';
     const { generarExcel } = await import('../lib/excel.js');
     const blob = await generarExcel({ mes: mes.value, miembros: props.miembros, inspecciones: data, firmas });
@@ -36,7 +38,7 @@ async function descargar() {
     a.href = URL.createObjectURL(blob); a.download = `${APP.formato.codigo}_${mes.value}_${nombre}.xlsx`;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-    estado.value = 'Listo. Revisa tus descargas.';
+    estado.value = faltan ? `Listo, pero ${faltan} firma(s) no se pudieron cargar. Revisa tu conexión e inténtalo de nuevo.` : 'Listo. Revisa tus descargas.';
   } catch (e) { estado.value = msgError(e); }
   trabajando.value = false;
 }

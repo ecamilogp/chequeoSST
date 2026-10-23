@@ -35,6 +35,15 @@ function encabezadoFormato(ws, ultimaCol, filaMes) {
   ws.getCell(3, 1).font = { size: 10, bold: true };
 }
 
+// Ancho y alto de un PNG en base64 (bytes 16-23 del encabezado).
+function medidasPng(b64) {
+  try {
+    const b = atob(b64.slice(0, 44));
+    const n = i => ((b.charCodeAt(i) << 24) | (b.charCodeAt(i + 1) << 16) | (b.charCodeAt(i + 2) << 8) | b.charCodeAt(i + 3)) >>> 0;
+    return [n(16), n(20)];
+  } catch { return [0, 0]; }
+}
+
 export async function generarExcel({ mes, miembros: tecnicos, inspecciones, firmas }) {
   const { default: ExcelJS } = await import('exceljs');
   const wb = new ExcelJS.Workbook();
@@ -50,8 +59,19 @@ export async function generarExcel({ mes, miembros: tecnicos, inspecciones, firm
   const cols = [
     ['Fecha', 11], ['Día', 6], ['Empleado', 28], ['Correo', 26], ['Cargo', 16], ['Área', 16], ['Hora de envío', 11],
     ['No cumplen', 10], ['Elementos que no cumplen', 48], ['Observaciones', 36], ['Estado', 18],
-    ['Revisó', 24], ['Fecha de validación', 17], ['Nota de revisión', 36], ['Ubicación', 22]
+    ['Revisó', 24], ['Fecha de validación', 17], ['Nota de revisión', 36], ['Ubicación', 22],
+    ['Firma del empleado', 23], ['Firma de quien revisó', 23]
   ];
+  const COL_FIRMA = cols.length - 1; // índice (base 1) de "Firma del empleado"
+  // Pone una firma (PNG en base64) dentro de una celda.
+  // La imagen se ajusta al recuadro ancho × alto sin deformarse.
+  const ponerFirma = (hoja, b64, col, fila, ancho, alto) => {
+    if (!b64) return;
+    const [w, h] = medidasPng(b64);
+    const k = w && h ? Math.min(ancho / w, alto / h) : 1;
+    const id = wb.addImage({ base64: b64, extension: 'png' });
+    hoja.addImage(id, { tl: { col: col - 1 + 0.06, row: fila - 1 + 0.08 }, ext: { width: w && h ? w * k : ancho, height: w && h ? h * k : alto }, editAs: 'oneCell' });
+  };
   cols.forEach(([, w], i) => { rs.getColumn(i + 1).width = w; });
   encabezadoFormato(rs, cols.length, `Resumen de ${fmtMes(mes)} · ${inspecciones.length} inspecciones`);
   const hr = rs.getRow(5);
@@ -70,8 +90,12 @@ export async function generarExcel({ mes, miembros: tecnicos, inspecciones, firm
       new Date(Date.UTC(yy, mm - 1, dd)), DIAS[new Date(yy, mm - 1, dd).getDay()], i.nombre, tec?.email || '', i.cargo, i.area,
       fmtHora(i.enviada_at), i.total_no_cumple, nc, i.observaciones, ESTADO[i.estado] || i.estado,
       i.revisor_nombre ? `${i.revisor_nombre}${i.revisor_cargo ? ' · ' + i.revisor_cargo : ''}` : '',
-      fmtFechaHora(i.revisada_at), i.nota_revisor || '', i.ubicacion || ''
+      fmtFechaHora(i.revisada_at), i.nota_revisor || '', i.ubicacion || '', '', ''
     ]);
+    const lineas = Math.max(1, nc.split('\n').length, String(i.observaciones || '').split('\n').length);
+    row.height = Math.max(46, lineas * 15);
+    ponerFirma(rs, firmas[i.firma_path], COL_FIRMA, row.number, 150, 56);
+    if (i.estado === 'validada' || i.estado === 'devuelta') ponerFirma(rs, firmas[i.firma_revisor_path], COL_FIRMA + 1, row.number, 150, 56);
     row.getCell(1).numFmt = 'dd/mm/yyyy';
     row.eachCell({ includeEmpty: true }, c => { c.border = bordes; c.alignment = { vertical: 'top', wrapText: true }; });
     if (i.total_no_cumple > 0) row.getCell(8).font = { bold: true, color: { argb: COLOR.N[1] } };
@@ -139,18 +163,23 @@ export async function generarExcel({ mes, miembros: tecnicos, inspecciones, firm
 
     // Firmas del trabajador (imagen por día)
     const fr = ws.addRow(['FIRMA DEL EMPLEADO']);
-    fr.height = 32;
+    fr.height = 26;
     fr.getCell(1).font = { bold: true, size: 9 }; fr.getCell(1).alignment = { vertical: 'middle' };
     for (let d = 1; d <= dias; d++) {
       const c = fr.getCell(COL0 + d - 1); c.border = bordes;
       const insp = porDia[`${mes}-${pad(d)}`];
-      const b64 = insp && firmas[insp.firma_path];
-      if (b64) {
-        const imgId = wb.addImage({ base64: b64, extension: 'png' });
-        ws.addImage(imgId, { tl: { col: COL0 + d - 1 - 1 + 0.05, row: fr.number - 1 + 0.1 }, ext: { width: 46, height: 17 }, editAs: 'oneCell' });
-      }
+      if (insp) ponerFirma(ws, firmas[insp.firma_path], COL0 + d - 1, fr.number, 50, 30);
     }
     fr.getCell(1).border = bordes;
+
+    const frv = ws.addRow(['FIRMA DE QUIEN REVISÓ']);
+    frv.height = 26;
+    frv.getCell(1).font = { bold: true, size: 9 }; frv.getCell(1).alignment = { vertical: 'middle' }; frv.getCell(1).border = bordes;
+    for (let d = 1; d <= dias; d++) {
+      frv.getCell(COL0 + d - 1).border = bordes;
+      const insp = porDia[`${mes}-${pad(d)}`];
+      if (insp && (insp.estado === 'validada' || insp.estado === 'devuelta')) ponerFirma(ws, firmas[insp.firma_revisor_path], COL0 + d - 1, frv.number, 50, 30);
+    }
 
     const vr = ws.addRow(['REVISIÓN']);
     vr.getCell(1).font = { bold: true, size: 9 }; vr.getCell(1).border = bordes;
