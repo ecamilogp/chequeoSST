@@ -282,6 +282,41 @@ begin
   return r;
 end $$;
 
+-- Validar todas las inspecciones pendientes de UN día con una sola firma.
+create or replace function public.validar_dia(
+  p_fecha date,
+  p_nombre text,
+  p_cargo text,
+  p_firma_path text
+) returns integer
+language plpgsql security definer set search_path = public as $$
+declare
+  yo public.miembros := public.mi_miembro();
+  n  integer;
+begin
+  if yo.id is null or yo.rol not in ('owner', 'admin') then raise exception 'Solo el owner y los administradores pueden revisar.'; end if;
+  if p_fecha is null then raise exception 'Elige el día que vas a validar.'; end if;
+  if p_fecha > (now() at time zone 'America/Bogota')::date then raise exception 'No se puede validar un día futuro.'; end if;
+  if length(trim(coalesce(p_nombre, ''))) = 0 then raise exception 'Escribe tu nombre.'; end if;
+  if p_firma_path is null or position(('rev/' || yo.id::text || '/') in p_firma_path) <> 1 then
+    raise exception 'Falta tu firma.';
+  end if;
+
+  update public.inspecciones
+     set estado = 'validada',
+         revisor_id = yo.id,
+         revisor_nombre = left(trim(p_nombre), 120),
+         revisor_cargo = left(trim(coalesce(p_cargo, '')), 120),
+         firma_revisor_path = p_firma_path,
+         revisada_at = now(),
+         nota_revisor = ''
+   where fecha = p_fecha
+     and estado in ('pendiente', 'corregida')
+     and miembro_id <> yo.id;
+  get diagnostics n = row_count;
+  return n;
+end $$;
+
 -- ---------------------------------------------------------------------
 -- Gestión de usuarios
 --   owner: registra y edita administradores y empleados.
@@ -380,6 +415,7 @@ begin
     'public.mi_email()', 'public.mi_miembro()', 'public.mi_miembro_id()', 'public.mi_rol()', 'public.es_revisor()', 'public.entrar()',
     'public.enviar_inspeccion(date, jsonb, jsonb, text, text, text, text, text, boolean, boolean, boolean)',
     'public.revisar_inspeccion(uuid, text, text, text, text, text)',
+    'public.validar_dia(date, text, text, text)',
     'public.guardar_miembro(uuid, text, text, text, text, text, boolean, boolean, boolean)',
     'public.activar_miembro(uuid, boolean)'
   ] loop
