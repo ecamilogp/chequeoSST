@@ -3,7 +3,7 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import { sb } from '../lib/supabase.js';
 import { ALL } from '../lib/catalogo.js';
-import { hoy, mesDe, rangoMes, fmtFecha, fmtMes, fmtHora, fmtFechaHora } from '../lib/fechas.js';
+import { hoy, mesDe, rangoMes, sumarDias, fmtFecha, fmtMes, fmtHora, fmtFechaHora } from '../lib/fechas.js';
 import { estadoDe, msgError } from '../lib/textos.js';
 import { urlFirma, subirFirma, blobADataURL } from '../lib/firmas.js';
 import { lsGet, lsSet, lsDel } from '../lib/almacen.js';
@@ -12,6 +12,7 @@ import { toast } from '../composables/useToast.js';
 import FirmaPad from '../components/FirmaPad.vue';
 import PlanillaMes from '../components/PlanillaMes.vue';
 import ExcelModal from '../components/ExcelModal.vue';
+import ValidarDiaModal from '../components/ValidarDiaModal.vue';
 
 const yo = miembro.value;
 const fecha = ref(hoy());
@@ -24,6 +25,8 @@ const firmas = ref({ emp: null, rev: null });
 const cargandoLista = ref(false);
 const cargandoDet = ref(false);
 const verExcel = ref(false);
+const verValidarDia = ref(false);
+const atrasados = ref([]); // [{ fecha, n }] días con inspecciones por validar
 const rev = ref({ nombre: yo.nombre, cargo: yo.cargo || 'Administrador', nota: '', recordar: false });
 const errRev = ref('');
 const guardando = ref(false);
@@ -43,6 +46,10 @@ const kpi = computed(() => {
   }
   return k;
 });
+// Inspecciones del día elegido que se pueden validar en bloque (no la propia, no devueltas).
+const pendientesDia = computed(() => lista.value
+  .filter(t => t.dia && t.id !== yo.id && (t.dia.estado === 'pendiente' || t.dia.estado === 'corregida'))
+  .map(t => ({ id: t.dia.id, nombre: t.nombre, total_no_cumple: t.dia.total_no_cumple })));
 const persona = computed(() => miembros.value.find(m => m.id === sel.value));
 const propia = computed(() => sel.value === yo.id);
 const puedeRevisar = computed(() => dia.value && dia.value.estado !== 'validada' && !propia.value);
@@ -62,6 +69,25 @@ async function cargarLista(silencioso) {
     lista.value = m.data.filter(p => (p.activo && p.rol === 'empleado') || porM[p.id]).map(p => ({ ...p, dia: porM[p.id] || null }));
   } catch (e) { toast(msgError(e)); }
   cargandoLista.value = false;
+  cargarAtrasados();
+}
+
+// Días (de los últimos 60) que tienen inspecciones por validar, separados por fecha.
+async function cargarAtrasados() {
+  const { data, error } = await sb.from('inspecciones').select('fecha')
+    .in('estado', ['pendiente', 'corregida']).neq('miembro_id', yo.id)
+    .gte('fecha', sumarDias(hoy(), -60)).order('fecha', { ascending: false });
+  if (error) return;
+  const n = {};
+  for (const { fecha: f } of data) n[f] = (n[f] || 0) + 1;
+  atrasados.value = Object.entries(n).map(([f, c]) => ({ fecha: f, n: c }));
+}
+
+async function diaValidado(n) {
+  verValidarDia.value = false;
+  toast(n ? `Se validaron ${n} inspecciones del ${fmtFecha(fecha.value)}` : 'No había inspecciones por validar ese día');
+  await cargarLista(true);
+  if (sel.value) await abrir(sel.value, true);
 }
 
 async function abrir(id, silencioso) {
@@ -131,6 +157,20 @@ onBeforeUnmount(() => clearInterval(timer));
       <span class="spacer"></span>
       <button class="btn" type="button" @click="cargarLista()">Actualizar</button>
       <button class="btn primary" type="button" @click="verExcel = true">Descargar Excel</button>
+    </div>
+
+    <div v-if="atrasados.length" class="card atrasados">
+      <div class="eyebrow">Días con inspecciones por validar</div>
+      <div class="chips">
+        <button v-for="a in atrasados" :key="a.fecha" type="button" class="chip-dia" :aria-current="a.fecha === fecha" @click="cambiarFecha(a.fecha)">
+          {{ fmtFecha(a.fecha).replace(/^./, c => c.toUpperCase()) }} <b>{{ a.n }}</b>
+        </button>
+      </div>
+    </div>
+
+    <div v-if="pendientesDia.length" class="banner validar-dia">
+      <span><b>{{ pendientesDia.length }}</b> {{ pendientesDia.length === 1 ? 'inspección' : 'inspecciones' }} por validar el {{ fmtFecha(fecha) }}.</span>
+      <button class="btn ok" type="button" @click="verValidarDia = true">Validar todo el día</button>
     </div>
 
     <div class="kpis">
@@ -213,6 +253,8 @@ onBeforeUnmount(() => clearInterval(timer));
       </div>
     </div>
 
+    <ValidarDiaModal v-if="verValidarDia" :fecha="fecha" :pendientes="pendientesDia" :yo="yo" :clave-firma="claveFirma"
+      @cerrar="verValidarDia = false" @hecho="diaValidado" />
     <ExcelModal v-if="verExcel" :miembros="miembros" :mes-inicial="mesDe(fecha)" @cerrar="verExcel = false" />
   </section>
 </template>

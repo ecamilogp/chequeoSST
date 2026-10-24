@@ -255,3 +255,9 @@ table.pl thead th.it{z-index:3}
   table.pl th.it,table.pl td.it{max-width:140px;min-width:120px;white-space:normal;line-height:1.2;font-size:.74rem;padding:4px 6px}
   .planilla-nav .hint{font-size:.8rem}
 }
+/* validar el día completo */
+.atrasados{display:flex;flex-direction:column;gap:8px;padding:12px 14px}
+.chip-dia{font:inherit;font-size:.85rem;display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;border:1px solid var(--line);background:var(--surface);color:var(--fg);cursor:pointer}
+.chip-dia b{background:var(--accent);color:var(--accent-ink);border-radius:999px;padding:0 7px;font-size:.78rem}
+.chip-dia[aria-current="true"]{border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 35%,transparent)}
+.validar-dia{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
