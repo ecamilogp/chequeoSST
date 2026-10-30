@@ -261,3 +261,28 @@ table.pl thead th.it{z-index:3}
 .chip-dia b{background:var(--accent);color:var(--accent-ink);border-radius:999px;padding:0 7px;font-size:.78rem}
 .chip-dia[aria-current="true"]{border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 35%,transparent)}
 .validar-dia{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+/* campana de notificaciones */
+.campana{position:relative}
+.campana .iconbtn{position:relative}
+.campana-n{position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:var(--bad);color:#fff;font-size:.7rem;font-weight:700;line-height:18px;text-align:center;box-shadow:0 0 0 2px var(--surface)}
+.campana-panel{position:absolute;right:0;top:calc(100% + 8px);width:min(360px,calc(100vw - 24px));max-height:70vh;overflow:auto;background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,.22);z-index:40}
+.campana-top{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px 14px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--surface)}
+.campana-vacia{padding:22px 14px;color:var(--muted);font-size:.9rem;text-align:center}
+.aviso{display:flex;gap:10px;width:100%;text-align:left;font:inherit;color:var(--fg);background:none;border:0;border-bottom:1px solid var(--line);padding:12px 14px;cursor:pointer}
+.aviso:last-child{border-bottom:0}
+.aviso:hover{background:var(--surface-2)}
+.aviso-punto{flex:0 0 8px;height:8px;margin-top:6px;border-radius:50%;background:transparent}
+.aviso.nueva .aviso-punto{background:var(--accent)}
+.aviso.nueva.devuelta .aviso-punto{background:var(--bad)}
+.aviso-txt{display:flex;flex-direction:column;gap:2px;min-width:0}
+.aviso-txt b{font-size:.9rem}
+.aviso:not(.nueva) .aviso-txt b{font-weight:500}
+.aviso-txt span{font-size:.85rem;color:var(--fg);overflow-wrap:anywhere}
+.aviso-txt small{font-size:.75rem;color:var(--muted)}
+@media (max-width:720px){
+  .campana-panel{position:fixed;left:12px;right:12px;top:calc(var(--hdr, 64px) + 6px);width:auto;max-height:calc(100vh - var(--hdr, 64px) - 24px)}
+}
+@media (max-width:420px){
+  .salir-txt{display:none}
+  .btn.salir{width:34px;padding:0;justify-content:center}
+}
