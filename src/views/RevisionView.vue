@@ -1,12 +1,13 @@
 <script setup>
 // Pantalla del owner y los administradores: ver, validar o devolver, y descargar el Excel.
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
 import { sb } from '../lib/supabase.js';
 import { ALL } from '../lib/catalogo.js';
 import { hoy, mesDe, rangoMes, sumarDias, fmtFecha, fmtMes, fmtHora, fmtFechaHora } from '../lib/fechas.js';
 import { estadoDe, msgError } from '../lib/textos.js';
 import { urlFirma, subirFirma, blobADataURL } from '../lib/firmas.js';
 import { lsGet, lsSet, lsDel } from '../lib/almacen.js';
+import { destino } from '../composables/useNotificaciones.js';
 import { miembro } from '../composables/useSesion.js';
 import { toast } from '../composables/useToast.js';
 import FirmaPad from '../components/FirmaPad.vue';
@@ -143,8 +144,18 @@ async function revisar(estado) {
 
 function elegirDia(f) { if (f <= hoy()) cambiarFecha(f); }
 
+// Un aviso de "corregida" abre ese día con el empleado seleccionado.
+async function irAlDestino(d) {
+  if (!d || d.pestana !== 'revision') return;
+  destino.value = null;
+  fecha.value = d.fecha;
+  await cargarLista();
+  if (d.empleadoId) await abrir(d.empleadoId);
+}
+watch(destino, irAlDestino);
+
 onMounted(() => {
-  cargarLista();
+  if (destino.value?.pestana === 'revision') irAlDestino(destino.value); else cargarLista();
   timer = setInterval(() => { if (document.visibilityState === 'visible') cargarLista(true); }, 60000);
 });
 onBeforeUnmount(() => clearInterval(timer));

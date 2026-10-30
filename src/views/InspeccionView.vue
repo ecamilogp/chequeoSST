@@ -1,6 +1,7 @@
 <script setup>
 // Pantalla del empleado: llenar, firmar y enviar la inspección del día.
 import { ref, computed, watch, onMounted, nextTick } from 'vue';
+import { destino } from '../composables/useNotificaciones.js';
 import { APP } from '../empresa.js';
 import { sb } from '../lib/supabase.js';
 import { SECCIONES, ALL, SYM, TXT } from '../lib/catalogo.js';
@@ -166,7 +167,18 @@ async function enviar() {
   enviando.value = false;
 }
 
-onMounted(async () => { await cargarMes(mes.value); await cargarDia(); });
+onMounted(async () => {
+  await cargarMes(mes.value); await cargarDia();
+  irAlDestino(destino.value);
+});
+// Un aviso de "devuelta" abre directamente ese día para corregirlo.
+async function irAlDestino(d) {
+  if (!d || d.pestana !== 'inspeccion') return;
+  destino.value = null;
+  await cambiarFecha(d.fecha);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+watch(destino, irAlDestino);
 </script>
 
 <template>
